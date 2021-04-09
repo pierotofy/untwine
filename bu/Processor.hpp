@@ -10,17 +10,16 @@
  *                                                                           *
  ****************************************************************************/
 
-
 #pragma once
 
 #include <pdal/PointTable.hpp>
 #include <pdal/PointView.hpp>
 
-#include "BuTypes.hpp"
 #include "PointAccessor.hpp"
+#include "Stats.hpp"
 #include "VoxelInfo.hpp"
 
-namespace ept2
+namespace untwine
 {
 
 class GridKey;
@@ -54,7 +53,7 @@ private:
     void appendCompressed(pdal::PointViewPtr view, const DimInfoList& dims, const FileInfo& fi,
         IndexIter begin, IndexIter end);
     void flushCompressed(pdal::PointTableRef table, pdal::PointViewPtr view,
-        const OctantInfo& oi);
+        const OctantInfo& oi, IndexedStats& stats);
 
     VoxelInfo m_vi;
     const BaseInfo& m_b;
@@ -63,4 +62,4 @@ private:
 };
 
 } // namespace bu
-} // namespace ept2
+} // namespace untwine

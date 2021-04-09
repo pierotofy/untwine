@@ -16,16 +16,14 @@
 #include <condition_variable>
 #include <list>
 #include <mutex>
-#include <unordered_map>
 #include <string>
-
-#include <pdal/util/ThreadPool.hpp>
 
 #include "EpfTypes.hpp"
 #include "BufferCache.hpp"
-#include "../common/VoxelKey.hpp"
+#include "../untwine/ThreadPool.hpp"
+#include "../untwine/VoxelKey.hpp"
 
-namespace ept2
+namespace untwine
 {
 namespace epf
 {
@@ -36,26 +34,29 @@ class Writer
     {
         VoxelKey key;
         DataVecPtr data;
+        size_t dataSize;
     };
 
 public:
-    Writer(const std::string& directory, int numThreads);
+    Writer(const std::string& directory, int numThreads, size_t pointSize);
 
-    void enqueue(const VoxelKey& key, DataVecPtr data, int numPoints);
+    void enqueue(const VoxelKey& key, DataVecPtr data, size_t dataSize);
     void stop();
-    BufferCache& bufferCache()
-        { return m_bufferCache; }
     const Totals& totals()
         { return m_totals; }
+    Totals totals(size_t minSize);
+    DataVecPtr fetchBuffer();
+    DataVecPtr fetchBufferBlocking();
 
 private:
     std::string path(const VoxelKey& key);
     void run();
 
     std::string m_directory;
-    pdal::ThreadPool m_pool;
+    ThreadPool m_pool;
     BufferCache m_bufferCache;
     bool m_stop;
+    size_t m_pointSize;
     std::list<WriteData> m_queue;
     std::list<VoxelKey> m_active;
     Totals m_totals;
@@ -64,4 +65,4 @@ private:
 };
 
 } // namespace epf
-} // namespace ept2
+} // namespace untwine

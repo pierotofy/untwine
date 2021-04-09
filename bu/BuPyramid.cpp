@@ -1,179 +1,49 @@
+#include <iomanip>
 #include <regex>
 #include <set>
 #include <string>
 #include <vector>
 
+#include <pdal/util/FileUtils.hpp>
 #include <pdal/util/ProgramArgs.hpp>
 
 #include "BuPyramid.hpp"
-#include "BuTypes.hpp"
 #include "FileInfo.hpp"
 #include "OctantInfo.hpp"
-#include "../common/Common.hpp"
+#include "../untwine/Common.hpp"
+#include "../untwine/ProgressWriter.hpp"
 
-int main(int argc, char *argv[])
-{
-    std::vector<std::string> arglist;
-
-    // Skip the program name.
-    argv++;
-    argc--;
-    while (argc--)
-        arglist.push_back(*argv++);
-
-    ept2::bu::BuPyramid builder;
-    builder.run(arglist);
-
-    return 0;
-}
-
-namespace ept2
+namespace untwine
 {
 namespace bu
 {
 
 /// BuPyramid
 
-BuPyramid::BuPyramid() : m_manager(m_b)
+BuPyramid::BuPyramid(BaseInfo& common) : m_b(common), m_manager(m_b)
 {}
 
-void BuPyramid::addArgs(pdal::ProgramArgs& programArgs)
+
+void BuPyramid::run(const Options& options, ProgressWriter& progress)
 {
+    m_b.inputDir = options.tempDir;
+    m_b.outputDir = options.outputDir;
+    m_b.stats = options.stats;
 
-    programArgs.add("output_dir", "Output directory", m_b.outputDir).setPositional();
-    programArgs.add("input_dir", "Input directory", m_b.inputDir).setPositional();
-}
-
-
-void BuPyramid::run(const std::vector<std::string>& options)
-{
-    pdal::ProgramArgs programArgs;
-
-    addArgs(programArgs);
-    try
-    {
-        programArgs.parse(options);
-    }
-    catch (const pdal::arg_error& err)
-    {
-        std::cerr << "bu Error: " << err.what() << "\n";
-        return;
-    }
-
+    getInputFiles();
+    size_t count = queueWork();
+    
+    progress.setPercent(.6);
+    progress.setIncrement(.4 / count);
+    m_manager.setProgress(&progress);
     std::thread runner(&PyramidManager::run, &m_manager);
-    try
-    {
-        readBaseInfo();
-        getInputFiles();
-        createDirs();
-        queueWork();
-    }
-    catch (const Error& err)
-    {
-        std::cerr << err.what() << "!\n";
-    }
     runner.join();
     writeInfo();
 }
 
 
-void BuPyramid::readBaseInfo()
-{
-    auto nextblock = [](std::istream& in)
-    {
-        std::string s;
-        bool firstnl = false;
-
-        while (in)
-        {
-            char c;
-            in.get(c);
-            if (c == '\n')
-            {
-                if (firstnl)
-                {
-                    // Remove trailing newline.
-                    s.resize(s.size() - 1);
-                    return s;
-                }
-                else
-                    firstnl = true;
-            }
-            else
-                firstnl = false;
-            s += c;
-        }
-        return s;
-    };
-
-    std::string baseFilename = m_b.inputDir + "/" + MetadataFilename;
-    std::ifstream in(baseFilename);
-
-    if (!in)
-        throw Error("Can't open 'info2.txt' in directory '" + m_b.inputDir + "'.");
-
-    std::stringstream ss(nextblock(in));
-    ss >> m_b.bounds.minx >> m_b.bounds.miny >> m_b.bounds.minz;
-    ss >> m_b.bounds.maxx >> m_b.bounds.maxy >> m_b.bounds.maxz;
-
-    ss.str(nextblock(in));
-    ss.clear();
-    ss >> m_b.trueBounds.minx >> m_b.trueBounds.miny >> m_b.trueBounds.minz;
-    ss >> m_b.trueBounds.maxx >> m_b.trueBounds.maxy >> m_b.trueBounds.maxz;
-
-    std::string srs = nextblock(in);
-    if (srs != "NONE")
-        m_b.srs.set(srs);
-
-    if (!in)
-        throw "Couldn't read info file.";
-
-    ss.str(nextblock(in));
-    ss.clear();
-    m_b.pointSize = 0;
-    while (true)
-    {
-        FileDimInfo fdi;
-        ss >> fdi;
-        if (!ss)
-            break;
-        if (fdi.name.empty())
-            throw Error("Invalid dimension in info.txt.");
-        m_b.pointSize += pdal::Dimension::size(fdi.type);
-        m_b.dimInfo.push_back(fdi);
-    }
-    if (m_b.pointSize == 0)
-        throw "Couldn't read info file.";
-}
-
-
-void BuPyramid::createDirs()
-{
-    pdal::FileUtils::createDirectory(m_b.outputDir);
-    pdal::FileUtils::deleteFile(m_b.outputDir + "/ept.json");
-    pdal::FileUtils::deleteDirectory(m_b.outputDir + "/ept-data");
-    pdal::FileUtils::deleteDirectory(m_b.outputDir + "/ept-hierarchy");
-    pdal::FileUtils::createDirectory(m_b.outputDir + "/ept-data");
-    pdal::FileUtils::createDirectory(m_b.outputDir + "/ept-hierarchy");
-}
-
-
 void BuPyramid::writeInfo()
 {
-    auto escapeQuotes = [](const std::string& in)
-    {
-        std::string out;
-        for (std::size_t i(0); i < in.size(); ++i)
-        {
-            if (in[i] == '"' && ((i && in[i - 1] != '\\') || !i))
-            {
-                out.push_back('\\');
-            }
-            out.push_back(in[i]);
-        }
-        return out;
-    };
-
     auto typeString = [](pdal::Dimension::BaseType b)
     {
         using namespace pdal::Dimension;
@@ -196,6 +66,9 @@ void BuPyramid::writeInfo()
     out << "{\n";
 
     pdal::BOX3D& b = m_b.bounds;
+
+    // Set fixed output for bounds output to get sufficient precision.
+    out << std::fixed;
     out << "\"bounds\": [" <<
         b.minx << ", " << b.miny << ", " << b.minz << ", " <<
         b.maxx << ", " << b.maxy << ", " << b.maxz << "],\n";
@@ -204,6 +77,8 @@ void BuPyramid::writeInfo()
     out << "\"boundsConforming\": [" <<
         tb.minx << ", " << tb.miny << ", " << tb.minz << ", " <<
         tb.maxx << ", " << tb.maxy << ", " << tb.maxz << "],\n";
+    // Reset to default float output to match PDAL option handling for now.
+    out << std::defaultfloat;
 
     out << "\"dataType\": \"laszip\",\n";
     out << "\"hierarchyType\": \"json\",\n";
@@ -218,20 +93,49 @@ void BuPyramid::writeInfo()
         out << "\t{";
             out << "\"name\": \"" << fdi.name << "\", ";
             out << "\"type\": \"" << typeString(pdal::Dimension::base(fdi.type)) << "\", ";
-            if (fdi.name == "X" || fdi.name == "Y" || fdi.name == "Z")
-                out << "\"scale\": .01, \"offset\": 0, ";
-            out << "\"size\": " << pdal::Dimension::size(fdi.type) << " ";
+            if (fdi.name == "X")
+                out << "\"scale\": " << m_b.scale[0] << ", \"offset\": " << m_b.offset[0] << ", ";
+            if (fdi.name == "Y")
+                out << "\"scale\": " << m_b.scale[1] << ", \"offset\": " << m_b.offset[1] << ", ";
+            if (fdi.name == "Z")
+                out << "\"scale\": " << m_b.scale[2] << ", \"offset\": " << m_b.offset[2] << ", ";
+            out << "\"size\": " << pdal::Dimension::size(fdi.type);
+            const Stats *stats = m_manager.stats(fdi.name);
+            if (stats)
+            {
+                const Stats::EnumMap& v = stats->values();
+                out << ", ";
+                if (v.size())
+                {
+                    out << "\"counts\": [ ";
+                    for (auto ci = v.begin(); ci != v.end(); ++ci)
+                    {
+                        auto c = *ci;
+                        if (ci != v.begin())
+                            out << ", ";
+                        out << "{\"value\": " << c.first << ", \"count\": " << c.second << "}";
+                    }
+                    out << "], ";
+                }
+                out << "\"count\": " << m_manager.totalPoints() << ", ";
+                out << "\"maximum\": " << stats->maximum() << ", ";
+                out << "\"minimum\": " << stats->minimum() << ", ";
+                out << "\"mean\": " << stats->average() << ", ";
+                out << "\"stddev\": " << stats->stddev() << ", ";
+                out << "\"variance\": " << stats->variance();
+            }
         out << "}";
         if (di + 1 != m_b.dimInfo.end())
             out << ",";
         out << "\n";
     }
     out << "],\n";
+
     out << "\"srs\": {\n";
-        if (m_b.srs.valid())
-        {
-            out << "\"" << pdal::Utils::escapeJSON(escapeQuotes(m_b.srs.getWKT())) << "\"\n";
-        }
+    if (m_b.srs.valid())
+    {
+        out << "\"wkt\": " <<  "\"" << pdal::Utils::escapeJSON(m_b.srs.getWKT()) << "\"\n";
+    }
     out << "}\n";
 
     out << "}\n";
@@ -278,23 +182,13 @@ void BuPyramid::getInputFiles()
             m_allFiles.erase(k);
         };
     }
-
-    /**
-    size_t sum = 0;
-    for (auto p : m_allFiles)
-    {
-        FileInfo& fi = p.second;
-        sum += fi.numPoints();
-        std::cerr << fi.filename() << "\t\t" << fi.numPoints() << "\t\t" << sum << "!\n";
-    }
-    exit(0);
-    **/
 }
 
 
-void BuPyramid::queueWork()
+size_t BuPyramid::queueWork()
 {
     std::set<VoxelKey> needed;
+    std::set<VoxelKey> parentsToProcess;
     std::vector<OctantInfo> have;
     const VoxelKey root;
 
@@ -313,6 +207,7 @@ void BuPyramid::queueWork()
         while (k != root)
         {
             k = k.parent();
+            parentsToProcess.insert(k);
             for (int i = 0; i < 8; ++i)
                 needed.insert(k.child(i));
         }
@@ -334,7 +229,8 @@ void BuPyramid::queueWork()
         m_manager.queue(o);
     for (const VoxelKey& k : needed)
         m_manager.queue(OctantInfo(k));
+    return parentsToProcess.size();
 }
 
 } // namespace bu
-} // namespace ept2
+} // namespace untwine

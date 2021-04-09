@@ -17,22 +17,23 @@
 
 #include "Writer.hpp"
 #include "Epf.hpp"
-#include "../common/VoxelKey.hpp"
+#include "../untwine/Common.hpp"
+#include "../untwine/VoxelKey.hpp"
 
 using namespace pdal;
 
-namespace ept2
+namespace untwine
 {
 namespace epf
 {
 
-Writer::Writer(const std::string& directory, int numThreads) :
-    m_directory(directory), m_pool(numThreads), m_stop(false)
+Writer::Writer(const std::string& directory, int numThreads, size_t pointSize) :
+    m_directory(directory), m_pool(numThreads), m_stop(false), m_pointSize(pointSize)
 {
     if (FileUtils::fileExists(directory))
     {
         if (!FileUtils::isDirectory(directory))
-            throw Error("Specified output directory '" + directory + "' is not a directory.");
+            fatal("Specified output directory '" + directory + "' is not a directory.");
     }
     else
         FileUtils::createDirectory(directory);
@@ -47,13 +48,40 @@ std::string Writer::path(const VoxelKey& key)
     return m_directory + "/" + key.toString() + ".bin";
 }
 
+Totals Writer::totals(size_t minSize)
+{
+    Totals t;
 
-void Writer::enqueue(const VoxelKey& key, DataVecPtr data, int numPoints)
+    for (auto ti = m_totals.begin(); ti != m_totals.end(); ++ti)
+        if (ti->second >= minSize)
+            t.insert(*ti);
+    return t;
+}
+
+DataVecPtr Writer::fetchBuffer()
+{
+    std::unique_lock<std::mutex> lock(m_mutex);
+
+    // If there are fewer items in the queue than we have FileProcessors, we may choose not
+    // to block and return a nullptr, expecting that the caller will flush outstanding cells.
+    return m_bufferCache.fetch(lock, m_queue.size() < NumFileProcessors);
+}
+
+
+DataVecPtr Writer::fetchBufferBlocking()
+{
+    std::unique_lock<std::mutex> lock(m_mutex);
+
+    return m_bufferCache.fetch(lock, false);
+}
+
+
+void Writer::enqueue(const VoxelKey& key, DataVecPtr data, size_t dataSize)
 {
     {
         std::lock_guard<std::mutex> lock(m_mutex);
-        m_totals[key] += numPoints;
-        m_queue.push_back({key, std::move(data)});
+        m_totals[key] += (dataSize / m_pointSize);
+        m_queue.push_back({key, std::move(data), dataSize});
     }
     m_available.notify_one();
 }
@@ -81,6 +109,8 @@ void Writer::run()
 
             // Look for a queue entry that represents a key that we aren't already
             // actively processing.
+            //ABELL - Perhaps a writer should grab and write *all* the entries in the queue
+            //  that match the key we found.
             auto li = m_queue.begin();
             for (; li != m_queue.end(); ++li)
                 if (std::find(m_active.begin(), m_active.end(), li->key) == m_active.end())
@@ -107,16 +137,16 @@ void Writer::run()
         // Open the file. Write the data. Stick the buffer back on the cache.
         // Remove the key from the active key list.
         std::ofstream out(path(wd.key), std::ios::app | std::ios::binary);
-        out.write(reinterpret_cast<const char *>(wd.data->data()), wd.data->size());
+        out.write(reinterpret_cast<const char *>(wd.data->data()), wd.dataSize);
         out.close();
         if (!out)
-            throw Error("Failure writing to '" + path(wd.key) + "'.");
-        m_bufferCache.replace(std::move(wd.data));
+            fatal("Failure writing to '" + path(wd.key) + "'.");
 
         std::lock_guard<std::mutex> lock(m_mutex);
+        m_bufferCache.replace(std::move(wd.data));
         m_active.remove(wd.key);
     }
 }
 
 } // namespace epf
-} // namespace ept2
+} // namespace untwine

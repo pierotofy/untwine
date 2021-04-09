@@ -19,7 +19,7 @@
 
 using namespace pdal;
 
-namespace ept2
+namespace untwine
 {
 namespace epf
 {
@@ -33,7 +33,7 @@ void Grid::expand(const BOX3D& bounds, size_t points)
     double side = (std::max)(xside, (std::max)(yside, zside));
     m_cubicBounds = BOX3D(m_bounds.minx, m_bounds.miny, m_bounds.minz,
         m_bounds.minx + side, m_bounds.miny + side, m_bounds.minz + side);
-    m_millionPoints += (points / 1000000.0);
+    m_millionPoints += size_t(points / 1000000.0);
 
     resetLevel(calcLevel());
 }
@@ -41,8 +41,7 @@ void Grid::expand(const BOX3D& bounds, size_t points)
 int Grid::calcLevel()
 {
     int level = 0;
-    double mp = m_millionPoints;
-    double limit = (MaxPointsPerNode / 1000000.0);
+    double mp = (double)m_millionPoints;
 
     double xside = m_bounds.maxx - m_bounds.minx;
     double yside = m_bounds.maxy - m_bounds.miny;
@@ -74,7 +73,7 @@ void Grid::resetLevel(int level)
 {
     // We have to have at least level 1 or things break when sampling.
     m_maxLevel = (std::max)(level, 1);
-    m_gridSize = std::pow(2, level);
+    m_gridSize = (int)std::pow(2, level);
 
     if (m_cubic)
     {
@@ -92,9 +91,9 @@ void Grid::resetLevel(int level)
 
 VoxelKey Grid::key(double x, double y, double z)
 {
-    int xi = std::floor((x - m_bounds.minx) / m_xsize);
-    int yi = std::floor((y - m_bounds.miny) / m_ysize);
-    int zi = std::floor((z - m_bounds.minz) / m_zsize);
+    int xi = (int)std::floor((x - m_bounds.minx) / m_xsize);
+    int yi = (int)std::floor((y - m_bounds.miny) / m_ysize);
+    int zi = (int)std::floor((z - m_bounds.minz) / m_zsize);
     xi = (std::min)((std::max)(0, xi), m_gridSize - 1);
     yi = (std::min)((std::max)(0, yi), m_gridSize - 1);
     zi = (std::min)((std::max)(0, zi), m_gridSize - 1);
@@ -103,4 +102,4 @@ VoxelKey Grid::key(double x, double y, double z)
 }
 
 } // namespace epf
-} // namespace ept2
+} // namespace untwine

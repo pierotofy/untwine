@@ -10,14 +10,13 @@
  *                                                                           *
  ****************************************************************************/
 
-
 #pragma once
 
 #include <cassert>
 #include <climits>
 #include <iostream>
 
-namespace ept2
+namespace untwine
 {
 
 class GridKey
@@ -25,9 +24,9 @@ class GridKey
 public:
     GridKey(int i, int j, int k)
     {
-        assert(i < std::numeric_limits<uint8_t>::max());
-        assert(j < std::numeric_limits<uint8_t>::max());
-        assert(k < std::numeric_limits<uint8_t>::max());
+        assert(i < (std::numeric_limits<uint8_t>::max)());
+        assert(j < (std::numeric_limits<uint8_t>::max)());
+        assert(k < (std::numeric_limits<uint8_t>::max)());
         m_key = (i << (2 * CHAR_BIT)) | (j << CHAR_BIT) | k;
     }
 
@@ -58,13 +57,13 @@ inline std::ostream& operator<<(std::ostream& out, const GridKey& k)
     return out;
 }
 
-} // namespace ept2
+} // namespace untwine
 
 namespace std
 {
-    template<> struct hash<ept2::GridKey>
+    template<> struct hash<untwine::GridKey>
     {
-        std::size_t operator()(const ept2::GridKey& k) const noexcept
+        std::size_t operator()(const untwine::GridKey& k) const noexcept
         {
             return std::hash<int>()(k.key());
         }

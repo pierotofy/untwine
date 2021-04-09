@@ -19,7 +19,7 @@
 
 #include "EpfTypes.hpp"
 
-namespace ept2
+namespace untwine
 {
 namespace epf
 {
@@ -31,15 +31,14 @@ public:
     BufferCache() : m_count(0)
     {}
 
-    DataVecPtr fetch();
+    DataVecPtr fetch(std::unique_lock<std::mutex>& lock, bool nonblock);
     void replace(DataVecPtr&& buf);
 
 private:
     std::deque<DataVecPtr> m_buffers;
-    std::mutex m_mutex;
     std::condition_variable m_cv;
     int m_count;
 };
 
 } // namespace epf
-} // namespace ept2
+} // namespace untwine

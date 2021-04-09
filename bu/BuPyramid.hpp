@@ -18,15 +18,18 @@
 #include <vector>
 
 #include "PyramidManager.hpp"
-#include "BuTypes.hpp"
 
 namespace pdal
 {
     class ProgramArgs;
 }
 
-namespace ept2
+namespace untwine
 {
+
+struct Options;
+class ProgressWriter;
+
 namespace bu
 {
 
@@ -35,21 +38,19 @@ class FileInfo;
 class BuPyramid
 {
 public:
-    BuPyramid();
-    void run(const std::vector<std::string>& options);
+    BuPyramid(BaseInfo& common);
+    void run(const Options& options, ProgressWriter& progress);
 
 private:
-    void addArgs(pdal::ProgramArgs& programArgs);
     void getInputFiles();
     void readBaseInfo();
-    void queueWork();
+    size_t queueWork();
     void writeInfo();
-    void createDirs();
 
-    PyramidManager m_manager;
     BaseInfo m_b;
+    PyramidManager m_manager;
     std::unordered_map<VoxelKey, FileInfo> m_allFiles;
 };
 
 } // namespace bu
-} // namespace ept2
+} // namespace untwine

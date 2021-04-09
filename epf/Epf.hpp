@@ -16,24 +16,22 @@
 #include <map>
 #include <vector>
 
+#include <pdal/PointLayout.hpp>
 #include <pdal/SpatialReference.hpp>
-#include <pdal/util/ThreadPool.hpp>
 
 #include "EpfTypes.hpp"
 #include "Grid.hpp"
+#include "../untwine/ProgressWriter.hpp"
+#include "../untwine/ThreadPool.hpp"
 
-namespace pdal
+namespace untwine
 {
-    class ProgramArgs;
-}
 
-namespace ept2
-{
+struct Options;
+class ProgressWriter;
+
 namespace epf
 {
-
-std::string indexToString(int index);
-int toIndex(int x, int y, int z);
 
 struct FileInfo;
 class Writer;
@@ -41,24 +39,22 @@ class Writer;
 class Epf
 {
 public:
-    Epf();
+    Epf(BaseInfo& common);
+    ~Epf();
 
-    void run(const std::vector<std::string>& options);
+    void run(const Options& options, ProgressWriter& progress);
 
 private:
-    void addArgs(pdal::ProgramArgs& programArgs);
-    void createFileInfo(std::vector<FileInfo>& fileInfos);
+    PointCount createFileInfo(const StringList& input, StringList dimNames,
+        std::vector<FileInfo>& fileInfos);
+    void fillMetadata(const pdal::PointLayoutPtr layout);
 
-    std::vector<std::string> m_files;
-    std::string m_outputDir;
+    BaseInfo& m_b;
     Grid m_grid;
     std::unique_ptr<Writer> m_writer;
-    pdal::ThreadPool m_pool;
-    size_t m_fileLimit;
-    int m_level;
-    bool m_doCube;
+    ThreadPool m_pool;
     FileInfo m_srsFileInfo;
 };
 
 } // namespace epf
-} // namespace ept2
+} // namespace untwine

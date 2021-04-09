@@ -15,8 +15,11 @@
 #include "Grid.hpp"
 #include "Cell.hpp"
 
-namespace ept2
+namespace untwine
 {
+
+class ProgressWriter;
+
 namespace epf
 {
 
@@ -26,7 +29,8 @@ class Writer;
 class FileProcessor
 {
 public:
-    FileProcessor(const FileInfo& fi, size_t pointSize, const Grid& grid, Writer *writer);
+    FileProcessor(const FileInfo& fi, size_t pointSize, const Grid& grid, Writer *writer,
+        ProgressWriter& progress);
 
     Cell *getCell(const VoxelKey& key);
     void run();
@@ -35,10 +39,8 @@ private:
     FileInfo m_fi;
     CellMgr m_cellMgr;
     Grid m_grid;
-    int m_cnt;
-
-    static int m_totalCnt;
+    ProgressWriter& m_progress;
 };
 
 } // namespace epf
-} // namespace ept2
+} // namespace untwine

@@ -10,7 +10,6 @@
  *                                                                           *
  ****************************************************************************/
 
-
 #pragma once
 
 #include <memory>
@@ -18,13 +17,15 @@
 #include <unordered_map>
 #include <vector>
 
-#include <pdal/util/ThreadPool.hpp>
-
-#include "BuTypes.hpp"
 #include "OctantInfo.hpp"
+#include "Stats.hpp"
+#include "../untwine/ThreadPool.hpp"
 
-namespace ept2
+namespace untwine
 {
+
+class ProgressWriter;
+
 namespace bu
 {
 
@@ -38,11 +39,13 @@ public:
     PyramidManager(const BaseInfo& b);
     ~PyramidManager();
 
+    void setProgress(ProgressWriter *progress);
     void queue(const OctantInfo& o);
     void run();
-    void logOctant(const VoxelKey& k, int cnt);
+    void logOctant(const VoxelKey& k, int cnt, const IndexedStats& istats);
     uint64_t totalPoints() const
         { return m_totalPoints; }
+    Stats *stats(const std::string& name);
 
 private:
     const int LevelBreak = 4;
@@ -52,8 +55,10 @@ private:
     std::condition_variable m_cv;
     std::unordered_map<VoxelKey, OctantInfo> m_completes;
     std::queue<OctantInfo> m_queue;
-    pdal::ThreadPool m_pool;
+    ThreadPool m_pool;
     uint64_t m_totalPoints;
+    std::map<std::string, Stats> m_stats;
+    ProgressWriter *m_progress;
     //
     std::unordered_map<VoxelKey, int> m_written;
     std::unordered_map<VoxelKey, int> m_childCounts;
@@ -70,4 +75,4 @@ private:
 };
 
 } // namespace bu
-} // namespace ept2
+} // namespace untwine

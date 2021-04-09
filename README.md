@@ -1,25 +1,78 @@
 # Untwine
 
-Untwine is software from [Hobu, Inc.](https://hobu.co) for creating [Entwine Point Tile](https://entwine.io/entwine-point-tile.html)  (EPT)
+ Untwine is software from [Hobu, Inc.](https://hobu.co) for creating [Entwine Point Tile](https://entwine.io/entwine-point-tile.html)  (EPT)
 web services from [PDAL](https://pdal.io)-readable point cloud data sources. It
 provides an alternative processing approach than the [Entwine](https://entwine.io)
 software, but the output is expected to be compatible EPT.
 
 
-## License
+License
+-------
 
 Untwine is licensed under the GPLv3. Commercial licensing is possible by contacting Hobu, Inc. for pricing.
 
-## Using Untwine
+Building Untwine:
+--------
 
-Creation of EPT dataset is a two-step process:
+The following steps will build the `untwine` executable:
+```
+mkdir build
+cd build
+cmake ..
+make
+```
 
-1. run `epf` tool to process the input dataset and create buckets of points:
-   ```
-   epf --files my_file.laz --output_dir /tmp/epf-output
-   ```
+Using Untwine
+-------------
 
-2. run `bu` tool to run the bottom-up indexing and produce the final EPT dataset:
-   ```
-   bu --input_dir /tmp/epf-output --output_dir /tmp/ept
-   ```
+```
+untwine [options]
+```
+
+Example:
+--------
+
+```
+untwine --files=some_directory --output_dir=output_directory
+```
+
+Options
+-------
+
+- files
+
+  Input files or directories containing input files. [Required]
+
+- output_dir
+
+  Output directory. [Required]
+
+- dims
+
+  List of dimensions to load. X, Y and Z are always loaded. Limiting the dimensions can
+  speed runtime and reduce temporary disk use.
+
+- temp_dir
+
+  Directory in which to place tiled output. If not provided, temporary files are placed
+  in 'output_dir'/temp.
+
+- cube
+
+  Create a voxel structure where each voxel is a cube. If false, the voxel structure is
+  a rectangular solid that encloses the points. [Default: true]
+
+- level
+
+  Level to use when initially tiling points.  If not provided, an initial level is
+  determined from the data. [Default: none].
+
+- file_limit
+
+  Only read 'file_limit' input files even if more exist in the 'files' list. Used primarily
+  for debugging. [Default: no limit]
+
+- stats
+
+  Generate summary statistics in 'ept.json' similar to those produced by Entwine.
+  [Default: false]

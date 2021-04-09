@@ -10,32 +10,36 @@
  *                                                                           *
  ****************************************************************************/
 
-
 #include <regex>
 #include <string>
 #include <vector>
 
 #include <pdal/util/FileUtils.hpp>
 
-#include "../common/VoxelKey.hpp"
+#include "../untwine/ProgressWriter.hpp"
+#include "../untwine/VoxelKey.hpp"
 
 #include "Processor.hpp"
 #include "PyramidManager.hpp"
 #include "VoxelInfo.hpp"
 
-namespace ept2
+namespace untwine
 {
 namespace bu
 {
 
-//PyramidManager::PyramidManager(const BaseInfo& b) : m_b(b), m_pool(6), m_totalPoints(0)
-//PyramidManager::PyramidManager(const BaseInfo& b) : m_b(b), m_pool(8), m_totalPoints(0)
 PyramidManager::PyramidManager(const BaseInfo& b) : m_b(b), m_pool(10), m_totalPoints(0)
 {}
 
 
 PyramidManager::~PyramidManager()
 {}
+
+
+void PyramidManager::setProgress(ProgressWriter *progress)
+{
+    m_progress = progress;
+}
 
 
 void PyramidManager::queue(const OctantInfo& o)
@@ -47,6 +51,7 @@ void PyramidManager::queue(const OctantInfo& o)
     }
     m_cv.notify_one();
 }
+
 
 void PyramidManager::run()
 {
@@ -84,13 +89,17 @@ void PyramidManager::process(const OctantInfo& o)
 
     // If there are no points in this voxel, just queue it as a child.
     if (!vi.hasPoints())
+    {
         queue(vi.octant());
+        m_progress->writeIncrement("Bypass sample for " + vi.key().toString());
+    }
     else
     {
         m_pool.add([vi, this]()
         {
             Processor p(*this, vi, m_b);
             p.run();
+            m_progress->writeIncrement("Sample complete for " + vi.key().toString());
         });
     }
 }
@@ -125,10 +134,23 @@ OctantInfo PyramidManager::removeComplete(const VoxelKey& k)
 }
 
 
-void PyramidManager::logOctant(const VoxelKey& k, int cnt)
+void PyramidManager::logOctant(const VoxelKey& k, int cnt, const IndexedStats& istats)
 {
     std::lock_guard<std::mutex> lock(m_mutex);
 
+    for (auto is : istats)
+    {
+        Stats& s = is.second;
+
+        auto it = m_stats.find(s.name());
+        if (it != m_stats.end())
+        {
+            Stats& cur = it->second;
+            cur.merge(s);
+        }
+        else
+            m_stats.insert({s.name(), s});
+    }
     m_written.insert({k, cnt});
     m_totalPoints += cnt;
 }
@@ -218,5 +240,14 @@ std::deque<VoxelKey> PyramidManager::emit(const VoxelKey& p, int stopLevel, Entr
     return roots;
 }
 
+
+Stats *PyramidManager::stats(const std::string& name)
+{
+    auto si = m_stats.find(name);
+    if (si == m_stats.end())
+        return nullptr;
+    return &si->second;
+}
+
 } // namespace bu
-} // namespace ept2
+} // namespace untwine

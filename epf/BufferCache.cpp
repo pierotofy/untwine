@@ -15,15 +15,17 @@
 
 #include "BufferCache.hpp"
 
-namespace ept2
+namespace untwine
 {
 namespace epf
 {
 
 // If we have a buffer in the cache, return it. Otherwise create a new one and return that.
-DataVecPtr BufferCache::fetch()
+// If nonblock is true and there are no available buffers, return null.
+DataVecPtr BufferCache::fetch(std::unique_lock<std::mutex>& lock, bool nonblock)
 {
-    std::unique_lock<std::mutex> lock(m_mutex);
+    if (nonblock && m_buffers.empty() && m_count >= MaxBuffers)
+        return nullptr;
 
     m_cv.wait(lock, [this](){ return m_buffers.size() || m_count < MaxBuffers; });
     if (m_buffers.size())
@@ -42,18 +44,11 @@ DataVecPtr BufferCache::fetch()
 // Put a buffer back in the cache.
 void BufferCache::replace(DataVecPtr&& buf)
 {
-    std::unique_lock<std::mutex> lock(m_mutex);
-
-    //ABELL - Fix this.
-    buf->resize(BufSize);
     m_buffers.push_back(std::move(buf));
 
     if (m_count == MaxBuffers)
-    {
-        lock.unlock();
         m_cv.notify_one();
-    }
 }
 
 } // namespace epf
-} // namespace ept2
+} // namespace untwine
