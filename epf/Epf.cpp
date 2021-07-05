@@ -27,6 +27,7 @@
 #include <pdal/util/Bounds.hpp>
 #include <pdal/util/FileUtils.hpp>
 #include <pdal/util/ProgramArgs.hpp>
+#include <pdal/filters/StreamCallbackFilter.hpp>
 
 namespace untwine
 {
@@ -240,30 +241,69 @@ PointCount Epf::createFileInfo(const StringList& input, StringList dimNames,
         s->setOptions(opts);
 
         QuickInfo qi = s->preview();
-        if (!qi.valid())
-            throw "Couldn't get quick info for '" + filename + "'.";
+        pdal::BOX3D bounds;
+        unsigned long pointCount = 0;
+        pdal::StringList dimNames;
+
+        if (qi.valid()){
+            bounds = qi.m_bounds;
+            pointCount = qi.m_pointCount;
+            dimNames = qi.m_dimNames;
+        }else{
+            pdal::StreamCallbackFilter f;
+            auto cb = [&pointCount, &bounds](pdal::PointRef& point)
+                {
+                    double x = point.getFieldAs<double>(Dimension::Id::X);
+                    double y = point.getFieldAs<double>(Dimension::Id::Y);
+                    double z = point.getFieldAs<double>(Dimension::Id::Z);
+                    bounds.grow(x, y, z);
+                    pointCount++;
+                    return true;
+                };
+            f.setCallback(cb);
+            f.setInput(*s);
+
+            FixedPointTable t(1000);
+            f.prepare(t);
+            f.execute(t);
+
+            auto dims = t.layout()->dims();
+
+            for (auto di = dims.begin(); di != dims.end(); ++di){
+                dimNames.push_back(t.layout()->dimName(*di));
+            }
+        }
 
         // Get scale values from the reader if they exist.
         pdal::MetadataNode root = s->getMetadata();
         pdal::MetadataNode m = root.findChild("scale_x");
         if (m.valid())
             m_b.scale[0] = (std::max)(m_b.scale[0], m.value<double>());
+        else
+            m_b.scale[0] = 1.0;
+
         m = root.findChild("scale_y");
         if (m.valid())
             m_b.scale[1] = (std::max)(m_b.scale[1], m.value<double>());
+        else
+            m_b.scale[1] = 1.0;
+
         m = root.findChild("scale_z");
         if (m.valid())
             m_b.scale[2] = (std::max)(m_b.scale[2], m.value<double>());
+        else
+            m_b.scale[2] = 1.0;
 
         FileInfo fi;
-        fi.bounds = qi.m_bounds;
-        fi.numPoints = qi.m_pointCount;
+        fi.bounds = bounds;
+
+        fi.numPoints = pointCount;
         fi.filename = filename;
         fi.driver = driver;
 
         // Accept dimension names if there are no limits or this name is in the list
         // of desired dimensions.
-        for (const std::string& name : qi.m_dimNames)
+        for (const std::string& name : dimNames)
             if (dimNames.empty() || Utils::contains(dimNames, Utils::toupper(name)))
                 fi.dimInfo.push_back(FileDimInfo(name));
 
@@ -275,7 +315,7 @@ PointCount Epf::createFileInfo(const StringList& input, StringList dimNames,
         if (!m_srsFileInfo.valid() && qi.m_srs.valid())
             m_srsFileInfo = fi;
 
-        m_grid.expand(qi.m_bounds, qi.m_pointCount);
+        m_grid.expand(bounds, pointCount);
         totalPoints += fi.numPoints;
     }
     return totalPoints;
